@@ -1,0 +1,45 @@
+name: Facebook Auto Poster
+
+on:
+  # التشغيل كل ساعة
+  schedule:
+    - cron: '0 * * * *'  # كل ساعة بالضبط (الدقيقة 0)
+  
+  # السماح بالتشغيل اليدوي من واجهة GitHub
+  workflow_dispatch:
+
+jobs:
+  post-to-facebook:
+    runs-on: ubuntu-latest
+    
+    steps:
+      # 1. سحب الكود من المستودع
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      
+      # 2. تثبيت Python
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      
+      # 3. تثبيت المكتبات المطلوبة
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      
+      # 4. تشغيل السكريبت
+      - name: Run Facebook Posting Script
+        env:
+          FB_TOKEN: ${{ secrets.FB_TOKEN }}
+          GOOGLE_CREDENTIALS: ${{ secrets.GOOGLE_CREDENTIALS }}
+        run: python script.py
+      
+      # 5. إظهار حالة التشغيل
+      - name: Job Summary
+        if: always()
+        run: |
+          echo "## Facebook Posting Summary" >> $GITHUB_STEP_SUMMARY
+          echo "✅ Script execution completed" >> $GITHUB_STEP_SUMMARY
+          echo "⏰ Run time: $(date)" >> $GITHUB_STEP_SUMMARY
