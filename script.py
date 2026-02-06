@@ -2,58 +2,71 @@ import gspread
 import facebook
 import os
 import time
+import re
 
-# 1. الاتصال بجوجل شيت (تأكد أن الملف يتم إنشاؤه عبر الـ Action)
+# 1. دالة ذكية لتحويل روابط Google Drive إلى روابط مباشرة (Direct Links)
+def get_drive_direct_link(url):
+    if 'drive.google.com' in url:
+        # استخراج الـ ID من الرابط بمختلف أشكاله
+        match = re.search(r'/(?:d|file/d|open\?id=)([^/?]+)', url)
+        if match:
+            file_id = match.group(1)
+            # استخدام صيغة الرابط المباشر التي يقبلها فيسبوك
+            return f'https://drive.google.com/uc?export=download&id={file_id}'
+    return url
+
+# 2. الاتصال بجوجل شيت
 try:
     gc = gspread.service_account(filename='credentials.json')
     sh = gc.open("FINAL_FULL_DATA").sheet1
 except Exception as e:
-    print(f"خطأ في الاتصال بجوجل شيت: {e}")
+    print(f"خطأ في الوصول للملف: {e}")
     exit(1)
 
-# 2. الاتصال بفيسبوك باستخدام التوكن من البيئة
+# 3. الاتصال بفيسبوك (تأكد من استخدام Page Access Token)
 graph = facebook.GraphAPI(access_token=os.getenv('FB_TOKEN'))
 
 all_records = sh.get_all_values()
 to_post = []
 
-# 3. البحث عن 3 صفوف صالحة للنشر (تجاهل الفارغ)
+# 4. البحث عن 3 صفوف صالحة (العمود B نص، العمود C صورة)
 for i, row in enumerate(all_records[1:], start=2):
-    # العمود B نص (Index 1) والعمود C صورة (Index 2)
     text_content = row[1].strip() if len(row) > 1 else ""
-    image_url = row[2].strip() if len(row) > 2 else ""
-    status = row[3] if len(row) > 3 else "" # العمود D للحالة
+    image_link = row[2].strip() if len(row) > 2 else ""
+    status = row[3] if len(row) > 3 else ""
 
-    # الشرط: نص وصورة موجودين والعمود D فارغ
-    if text_content and image_url and status == "":
+    if text_content and image_link and status == "":
         to_post.append({
             "row_idx": i, 
             "message": text_content, 
-            "image": image_url
+            "image": image_link
         })
     
     if len(to_post) == 3:
         break
 
-# 4. تنفيذ النشر باستخدام الطريقة الحديثة
+# 5. تنفيذ النشر
 for item in to_post:
     try:
-        print(f"جاري نشر الصف {item['row_idx']}...")
+        print(f"جاري معالجة ونشر الصف {item['row_idx']}...")
         
-        # التعديل: استخدام Feed مع ربط الصورة كـ Link لضمان القبول
+        # تحويل الرابط قبل الإرسال
+        final_image_url = get_drive_direct_link(item['image'])
+        
+        # النشر باستخدام الطريقة الأكثر استقراراً للـ Pages
         graph.put_object(
             parent_object='me', 
             connection_name='feed', 
             message=item['message'], 
-            link=item['image']
+            link=final_image_url
         )
         
-        # تحديث الحالة إلى Done في العمود D
+        # تحديث العمود D بكلمة Done
         sh.update_cell(item['row_idx'], 4, "Done")
-        print(f"✅ تم نشر الصف {item['row_idx']} بنجاح.")
+        print(f"✅ تم النشر بنجاح للصف {item['row_idx']}")
         
-        time.sleep(10) # أمان لتجنب الـ Spam
+        time.sleep(10) # انتظار لتجنب الحظر
     except Exception as e:
-        print(f"❌ فشل في نشر الصف {item['row_idx']}: {e}")
+        print(f"❌ خطأ في الصف {item['row_idx']}: {e}")
 
-print("--- تمت المهمة بنجاح ---")
+print("--- انتهت العملية ---")
