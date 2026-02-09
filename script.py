@@ -39,7 +39,7 @@ except Exception as e:
 try:
     fb_token = os.getenv('FB_TOKEN')
     if not fb_token:
-         raise ValueError("FB_TOKEN environment variable is not set.")
+        raise ValueError("FB_TOKEN environment variable is not set.")
     graph = facebook.GraphAPI(access_token=fb_token)
 except Exception as e:
     print(f"❌ خطأ في الاتصال بفيسبوك: {e}")
@@ -64,7 +64,7 @@ for i, row in enumerate(all_records[1:], start=2):
     image_link = row[COL_IMAGE].strip()
     status = row[COL_STATUS].strip()
 
-if text_content and image_link and status.lower() != "done":
+    if text_content and image_link and status.lower() != "done":
         to_post.append({"row_idx": i, "message": text_content, "image": image_link})
     
     if len(to_post) == BATCH_SIZE:
