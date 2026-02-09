@@ -64,7 +64,7 @@ for i, row in enumerate(all_records[1:], start=2):
     image_link = row[COL_IMAGE].strip()
     status = row[COL_STATUS].strip()
 
-    if text_content and image_link and status == "":
+if text_content and image_link and status.lower() != "done":
         to_post.append({"row_idx": i, "message": text_content, "image": image_link})
     
     if len(to_post) == BATCH_SIZE:
