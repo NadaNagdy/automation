@@ -8,6 +8,7 @@ import subprocess
 from io import BytesIO
 import shutil
 from google.oauth2.service_account import Credentials
+import sync_products
 
 # Try to import GUI-dependent libraries
 # These will fail in headless environments (CI/CD)
@@ -269,40 +270,11 @@ def post_to_whatsapp_channel(channel_name, channel_link, message, image_path):
 
 # --- Website Helpers ---
 def update_website(text, price, image_path):
-    """Updates the toys/index.html file with the new product."""
-    index_path = 'toys/index.html'
-    img_dir = 'toys/img'
-    
-    # 1. Determine new ID
-    if not os.path.exists(index_path):
-        print(f"❌ Index file not found at {index_path}")
-        return
-
-    with open(index_path, 'r') as f:
-        content = f.read()
-    
-    # Find all IDs to get the max
-    ids = [int(m) for m in re.findall(r'id:\s*(\d+)', content)]
-    new_id = max(ids) + 1 if ids else 1
-    
-    # 2. Move and Rename Image
-    if not os.path.exists(img_dir):
-        os.makedirs(img_dir)
-        
-    new_img_name = f"{new_id}.jpg"
-    new_img_path = os.path.join(img_dir, new_img_name)
-    try:
-        shutil.copy(image_path, new_img_path) 
-        print(f"✅ Image saved to {new_img_path}")
-    except Exception as e:
-        print(f"❌ Failed to save image: {e}")
-        return
-    
-    # 3. Create Product Object
-    # Simple extraction of name (first line) and description
-    lines = text.split('\n')
-    name = lines[0][:50].replace('"', "'").strip() # First line, max 50 chars, escape quotes
-    desc = text.replace('"', "'").replace('\n', '\\n').replace('`', "'") # Escape backticks too
+    """Updates the website by adding product to Google Sheet and syncing."""
+    # Extract name and desc
+    lines = text.strip().split('\n')
+    name = lines[0][:50].strip().replace('"', "'")
+    desc = text.strip()
     
     # Clean price
     try:
@@ -310,24 +282,15 @@ def update_website(text, price, image_path):
         price_val = float(str(price).replace(',', '').replace('EGP', '').replace('LE', '').replace(' ', ''))
     except:
         price_val = 0
-        
-    new_product_js = f"""
-            {{
-                id: {new_id}, name: "{name}", price: {price_val}, age: "3y+", img: "img/{new_img_name}", desc: `{desc}`, benefits: "منتج جديد", play_guide: "استمتاع وتعلّم"
-            }},"""
-            
-    # 4. Insert into index.html
-    insert_pos = content.find('const products = [')
-    if insert_pos > -1:
-         # Find the opening bracket
-         start_bracket = insert_pos + len('const products = [')
-         # Insert right after the opening bracket
-         new_content = content[:start_bracket] + new_product_js + content[start_bracket:]
-         with open(index_path, 'w') as f:
-             f.write(new_content)
-         print(f"✅ Added to Website: {name} (ID: {new_id})")
-    else:
-         print("❌ Could not find products array in index.html")
+
+    try:
+        success = sync_products.add_product(name, price_val, desc, image_path)
+        if success:
+            print(f"✅ Product added via Sync: {name}")
+        else:
+            print("❌ Failed to add product via Sync")
+    except Exception as e:
+        print(f"❌ Error in update_website: {e}")
 
 
 # 2. إعداد الاتصال بجوجل شيت (gspread 6.0.0)
@@ -524,5 +487,8 @@ for item in to_post:
     except Exception as e:
         print(f"❌ خطأ في معالجة الصف {item['row_idx']}: {e}")
 
+
 print("--- انتهت دورة الأتمتة بنجاح ---")
+# Perform final sync to ensure website reflects any manual sheet edits
+sync_products.sync_products()
 
