@@ -6,7 +6,6 @@ import re
 import requests
 import subprocess
 from io import BytesIO
-import pywhatkit
 import shutil
 from google.oauth2.service_account import Credentials
 
@@ -22,6 +21,15 @@ except (ImportError, KeyError) as e:
     print("⚠️ WhatsApp Channel posting will be skipped.")
     GUI_AVAILABLE = False
     pyautogui = None
+
+try:
+    import pywhatkit
+    PYWHATKIT_AVAILABLE = True
+except (ImportError, KeyError) as e:
+    print(f"⚠️ pywhatkit not available (headless environment): {e}")
+    print("⚠️ WhatsApp Admin messaging will be skipped.")
+    PYWHATKIT_AVAILABLE = False
+    pywhatkit = None
 
 # 1. تحويل روابط جوجل درايف لصيغة التحميل المباشر
 def get_drive_direct_link(url):
@@ -481,7 +489,7 @@ for item in to_post:
                 print(f"❌ Failed to update website: {e}")
 
             # 4. Post to WhatsApp (Admin)
-            if wa_target:
+            if wa_target and PYWHATKIT_AVAILABLE:
                 print(f"📱 Sending to WhatsApp Admin: {wa_target}")
                 try:
                     wa_msg = f"{item['wa_message']}\n\n{item['image']}"
@@ -490,6 +498,8 @@ for item in to_post:
                     time.sleep(5) 
                 except Exception as e:
                     print(f"❌ Failed to send to WhatsApp Admin: {e}")
+            elif wa_target and not PYWHATKIT_AVAILABLE:
+                print("⚠️ Skipping WhatsApp Admin messaging (pywhatkit not available in headless environment)")
 
             # 5. Post to WhatsApp Channel
             if wa_channel:
