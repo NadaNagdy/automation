@@ -21,6 +21,15 @@ def get_drive_direct_link(url):
         return f'https://drive.google.com/uc?export=download&id={file_id}'
     return url
 
+def get_instagram_compatible_url(url):
+    """Returns a Google Drive URL format that works better with Instagram API (lh3)."""
+    match = re.search(r'(?:id=|/d/|/file/d/)([^/&?]+)', url)
+    if match:
+        file_id = match.group(1)
+        # lh3 link is often friendlier to Instagram's crawler for images
+        return f'https://lh3.googleusercontent.com/d/{file_id}'
+    return url
+
 # --- Instagram Helpers ---
 def get_instagram_id(page_id, access_token):
     """Fetches the Instagram Business Account ID linked to the Facebook Page."""
@@ -47,6 +56,11 @@ def post_instagram_photo(ig_id, image_url, caption, access_token):
     if not creation_id:
         print(f"❌ Failed to create IG Photo Container: {resp}")
         return False
+    
+    # Step 1.5: Wait for readiness (sometimes required even for photos)
+    # Simple sleep or check status
+    time.sleep(5) 
+    # Optional: Check status like reels if strictly needed, but 5s sleep usually fixes photo race conditions
         
     # Step 2: Publish
     url_publish = f"https://graph.facebook.com/v19.0/{ig_id}/media_publish"
@@ -134,11 +148,36 @@ try:
         # Fallback to config file
         fb_token = config.get("facebook", {}).get("access_token")
     
+    
     page_id = config.get("facebook", {}).get("page_id") # Get Page ID from config
     
     if not fb_token or fb_token == "YOUR_ACCESS_TOKEN":
         raise ValueError("FB_TOKEN is missing in environment variables and config.json")
-        
+    
+    # Attempt to get Page Access Token
+    # If the user provided a User Token, we need to exchange it for a Page Token
+    # to avoid "publish_actions deprecated" error (posting to user profile)
+    # and to properly auth with Instagram.
+    if page_id and page_id != "YOUR_PAGE_ID":
+        try:
+            # 1. Check if token works for the page directly (maybe it is a Page Token)
+            # or try to find the page in user's accounts
+            accounts_url = f"https://graph.facebook.com/v19.0/me/accounts?access_token={fb_token}"
+            resp = requests.get(accounts_url).json()
+            
+            if 'data' in resp:
+                found_page = False
+                for page in resp['data']:
+                    if page.get('id') == page_id:
+                        print(f"✅ Found Page Token for: {page.get('name')}")
+                        fb_token = page.get('access_token') # Switch to Page Token
+                        found_page = True
+                        break
+                if not found_page:
+                     print("⚠️ Page ID not found in User Accounts. Taking token as is...")
+        except Exception as e:
+            print(f"⚠️ Failed to exchange token: {e}")
+
     graph = facebook.GraphAPI(access_token=fb_token)
     
     # Get IG ID early
@@ -207,9 +246,12 @@ for item in to_post:
                 
                 if 'video' in content_type:
                     print("🎥 Detected Video content for Instagram...")
+                    # For video, try standard direct link first (lh3 might not support video streaming same way)
                     post_instagram_reel(ig_id, direct_url, item['message'], fb_token)
                 else:
-                    post_instagram_photo(ig_id, direct_url, item['message'], fb_token)
+                    # For images, use lh3 link to avoid redirect/mime-type issues
+                    ig_url = get_instagram_compatible_url(item['image'])
+                    post_instagram_photo(ig_id, ig_url, item['message'], fb_token)
 
             # تحديث الحالة في العمود المحدد (1-based index)
             # config["columns"]["status"] is 0-based, so add 1
