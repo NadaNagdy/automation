@@ -14,7 +14,99 @@ def get_drive_direct_link(url):
         file_id = match.group(1)
         # رابط تحميل مباشر يتخطى صفحة المعاينة
         return f'https://drive.google.com/uc?export=download&id={file_id}'
+    match = re.search(r'(?:id=|/d/|/file/d/)([^/&?]+)', url)
+    if match:
+        file_id = match.group(1)
+        # رابط تحميل مباشر يتخطى صفحة المعاينة
+        return f'https://drive.google.com/uc?export=download&id={file_id}'
     return url
+
+# --- Instagram Helpers ---
+def get_instagram_id(page_id, access_token):
+    """Fetches the Instagram Business Account ID linked to the Facebook Page."""
+    url = f"https://graph.facebook.com/v19.0/{page_id}?fields=instagram_business_account&access_token={access_token}"
+    try:
+        resp = requests.get(url).json()
+        return resp.get('instagram_business_account', {}).get('id')
+    except Exception as e:
+        print(f"⚠️ Failed to get Instagram ID: {e}")
+        return None
+
+def post_instagram_photo(ig_id, image_url, caption, access_token):
+    """Posts a photo to Instagram."""
+    # Step 1: Create Container
+    url_create = f"https://graph.facebook.com/v19.0/{ig_id}/media"
+    payload = {
+        'image_url': image_url,
+        'caption': caption,
+        'access_token': access_token
+    }
+    resp = requests.post(url_create, data=payload).json()
+    creation_id = resp.get('id')
+    
+    if not creation_id:
+        print(f"❌ Failed to create IG Photo Container: {resp}")
+        return False
+        
+    # Step 2: Publish
+    url_publish = f"https://graph.facebook.com/v19.0/{ig_id}/media_publish"
+    payload_pub = {
+        'creation_id': creation_id,
+        'access_token': access_token
+    }
+    resp_pub = requests.post(url_publish, data=payload_pub).json()
+    if 'id' in resp_pub:
+        print(f"✅ Posted to Instagram (Photo): {resp_pub['id']}")
+        return True
+    else:
+         print(f"❌ Failed to publish IG Photo: {resp_pub}")
+         return False
+
+def post_instagram_reel(ig_id, video_url, caption, access_token):
+    """Posts a reel to Instagram."""
+    # Step 1: Create Container
+    url_create = f"https://graph.facebook.com/v19.0/{ig_id}/media"
+    payload = {
+        'video_url': video_url,
+        'media_type': 'REELS',
+        'caption': caption,
+        'access_token': access_token
+    }
+    resp = requests.post(url_create, data=payload).json()
+    creation_id = resp.get('id')
+    
+    if not creation_id:
+        print(f"❌ Failed to create IG Reel Container: {resp}")
+        return False
+        
+    # Step 2: Wait for processing (Video takes time)
+    print("⏳ Waiting for Reel processing...", end='', flush=True)
+    for _ in range(10): # Try for 60 seconds
+        time.sleep(6)
+        print(".", end='', flush=True)
+        status_url = f"https://graph.facebook.com/v19.0/{creation_id}?fields=status_code&access_token={access_token}"
+        status_resp = requests.get(status_url).json()
+        if status_resp.get('status_code') == 'FINISHED':
+            break
+        elif status_resp.get('status_code') == 'ERROR':
+            print("❌ Processing Error!")
+            return False
+    print(" Done.")
+
+    # Step 3: Publish
+    url_publish = f"https://graph.facebook.com/v19.0/{ig_id}/media_publish"
+    payload_pub = {
+        'creation_id': creation_id,
+        'access_token': access_token
+    }
+    resp_pub = requests.post(url_publish, data=payload_pub).json()
+    if 'id' in resp_pub:
+        print(f"✅ Posted to Instagram (Reel): {resp_pub['id']}")
+        return True
+    else:
+         print(f"❌ Failed to publish IG Reel: {resp_pub}")
+         return False
+
 
 # 2. إعداد الاتصال بجوجل شيت (gspread 6.0.0)
 try:
@@ -39,8 +131,25 @@ except Exception as e:
 try:
     fb_token = os.getenv('FB_TOKEN')
     if not fb_token:
-        raise ValueError("FB_TOKEN environment variable is not set.")
+        # Fallback to config file
+        fb_token = config.get("facebook", {}).get("access_token")
+    
+    page_id = config.get("facebook", {}).get("page_id") # Get Page ID from config
+    
+    if not fb_token or fb_token == "YOUR_ACCESS_TOKEN":
+        raise ValueError("FB_TOKEN is missing in environment variables and config.json")
+        
     graph = facebook.GraphAPI(access_token=fb_token)
+    
+    # Get IG ID early
+    ig_id = None
+    if page_id and page_id != "YOUR_PAGE_ID":
+        ig_id = get_instagram_id(page_id, fb_token)
+        if ig_id:
+            print(f"📸 Linked Instagram Account ID: {ig_id}")
+        else:
+            print("⚠️ No linked Instagram account found or Page ID invalid.")
+
 except Exception as e:
     print(f"❌ خطأ في الاتصال بفيسبوك: {e}")
     exit(1)
@@ -79,21 +188,40 @@ for item in to_post:
         # تحميل الصورة برمجياً (requests 2.31.0)
         response = requests.get(direct_url, timeout=30)
         if response.status_code == 200:
+            # 1. Post to Facebook
             image_bytes = BytesIO(response.content)
-            
-            # رفع الصورة لفيسبوك كملف ميديا
             graph.put_photo(image=image_bytes, message=item['message'])
+            print(f"✅ Posted to Facebook")
             
+            # 2. Post to Instagram (if available)
+            if ig_id:
+                # Determine if it's a video or image based on file extension from URL or content-type?
+                # The Drive direct link returns a binary stream, tricky to guess.
+                # But headers might help.
+                content_type = response.headers.get('Content-Type', '')
+                
+                # We need a PUBLIC URL for Instagram API (Drive direct link works usually)
+                # Note: `get_drive_direct_link` returns a url that redirects to the binary.
+                # Instagram API needs a stable URL. The `direct_url` works IF it is publicly accessible.
+                # Our upload_to_drive made it public.
+                
+                if 'video' in content_type:
+                    print("🎥 Detected Video content for Instagram...")
+                    post_instagram_reel(ig_id, direct_url, item['message'], fb_token)
+                else:
+                    post_instagram_photo(ig_id, direct_url, item['message'], fb_token)
+
             # تحديث الحالة في العمود المحدد (1-based index)
             # config["columns"]["status"] is 0-based, so add 1
             status_col_idx = config.get("columns", {}).get("status", 2) + 1
             sh.update_cell(item['row_idx'], status_col_idx, "Done")
-            print(f"✅ تم النشر وتحديث الصف {item['row_idx']}")
+            print(f"✅ الحالة محدثة للصف {item['row_idx']}")
         else:
-            print(f"❌ فشل تحميل الصورة، كود الاستجابة: {response.status_code}")
+            print(f"❌ فشل تحميل الصورة/الفيديو، كود الاستجابة: {response.status_code}")
             
         time.sleep(10) # انتظار لتجنب الـ Rate Limit
     except Exception as e:
         print(f"❌ خطأ في معالجة الصف {item['row_idx']}: {e}")
 
 print("--- انتهت دورة الأتمتة بنجاح ---")
+
