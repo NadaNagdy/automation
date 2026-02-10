@@ -4,14 +4,24 @@ import os
 import time
 import re
 import requests
-import pyautogui
 import subprocess
-# Fail-safe ensuring you can always exit automation by moving mouse to corner
-pyautogui.FAILSAFE = True
 from io import BytesIO
 import pywhatkit
 import shutil
 from google.oauth2.service_account import Credentials
+
+# Try to import GUI-dependent libraries
+# These will fail in headless environments (CI/CD)
+try:
+    import pyautogui
+    # Fail-safe ensuring you can always exit automation by moving mouse to corner
+    pyautogui.FAILSAFE = True
+    GUI_AVAILABLE = True
+except (ImportError, KeyError) as e:
+    print(f"⚠️ GUI not available (headless environment): {e}")
+    print("⚠️ WhatsApp Channel posting will be skipped.")
+    GUI_AVAILABLE = False
+    pyautogui = None
 
 # 1. تحويل روابط جوجل درايف لصيغة التحميل المباشر
 def get_drive_direct_link(url):
@@ -142,7 +152,12 @@ def post_to_whatsapp_channel(channel_name, channel_link, message, image_path):
     """
     Posts message and image to a WhatsApp Channel using GUI automation.
     Tries opening the channel link first, then falls back to search.
+    Requires a GUI environment (not headless).
     """
+    if not GUI_AVAILABLE:
+        print("⚠️ Skipping WhatsApp Channel posting (GUI not available in headless environment)")
+        return
+        
     import webbrowser
     import pyperclip
     import time
