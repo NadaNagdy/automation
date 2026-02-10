@@ -110,14 +110,12 @@ def migrate_data(sh, products):
             print("ℹ️ Creating 'Website Products' sheet...")
             worksheet = sh.add_worksheet(title="Website Products", rows=1000, cols=10)
             
-            # Add Headers without Status and WhatsApp Status to keep it distinct from the scraper sheet?
-            # Or use the same structure? 
-            # Let's make a dedicated structure for the CMS
-            headers = ["ID", "Name", "Price", "Category (Age)", "Image Path", "Description", "Benefits", "Play Guide", "Status"]
+            # Add Headers
+            headers = ["ID", "Name", "Price", "Category (Age)", "Category (Field)", "Image Path", "Description", "Benefits", "Play Guide", "Status"]
             worksheet.append_row(headers)
             
             # Format headers
-            worksheet.format('A1:I1', {'textFormat': {'bold': True}, 'backgroundColor': {'red': 0.9, 'green': 0.9, 'blue': 0.9}})
+            worksheet.format('A1:J1', {'textFormat': {'bold': True}, 'backgroundColor': {'red': 0.9, 'green': 0.9, 'blue': 0.9}})
 
         # Prepare rows
         rows = []
@@ -138,6 +136,7 @@ def migrate_data(sh, products):
                 p.get('name', ''),
                 p.get('price', 0),
                 p.get('age', ''),
+                p.get('category', 'science'),  # Default STEM category
                 p.get('img', ''),
                 p.get('desc', ''),
                 p.get('benefits', ''),

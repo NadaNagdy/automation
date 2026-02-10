@@ -52,12 +52,13 @@ def add_product(name, price, desc, image_source_path):
         print(f"✅ Image saved to {new_img_path}")
         
         # Prepare Row
-        # Headers: "ID", "Name", "Price", "Category (Age)", "Image Path", "Description", "Benefits", "Play Guide", "Status"
+        # Headers: "ID", "Name", "Price", "Category (Age)", "Category (Field)", "Image Path", "Description", "Benefits", "Play Guide", "Status"
         row = [
             new_id,
             name[:50], # Truncate name if too long?
             price,
             "3y+", # Default age
+            "science", # Default STEM category
             f"img/{new_img_name}",
             desc,
             "منتج جديد", # Default benefits
@@ -104,6 +105,7 @@ def sync_products_logic(sh=None):
                 "name": str(r.get("Name", "")),
                 "price": r.get("Price", 0),
                 "age": str(r.get("Category (Age)", "")),
+                "category": str(r.get("Category (Field)", "science")),  # STEM category
                 "img": str(r.get("Image Path", "")),
                 "desc": str(r.get("Description", "")),
                 "benefits": str(r.get("Benefits", "")),
@@ -122,6 +124,7 @@ def sync_products_logic(sh=None):
         js_content += f"        name: {json.dumps(p['name'], ensure_ascii=False)},\n"
         js_content += f"        price: {p['price']},\n"
         js_content += f"        age: {json.dumps(p['age'], ensure_ascii=False)},\n"
+        js_content += f"        category: {json.dumps(p['category'], ensure_ascii=False)},\n"
         js_content += f"        img: {json.dumps(p['img'], ensure_ascii=False)},\n"
         js_content += f"        desc: `{desc_escaped}`,\n"
         js_content += f"        benefits: {json.dumps(p['benefits'], ensure_ascii=False)},\n"
