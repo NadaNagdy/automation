@@ -5,3 +5,5 @@ venv/
 .env
 credentials.json
 .DS_Store
+PyWhatKit_DB.txt
+temp_image_*.jpg

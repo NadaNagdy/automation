@@ -255,7 +255,7 @@ async def main():
                 # 5. Add to Sheet
                 # Columns: [Date, Content (FB/Web 2x), ImageLink, Status, Content (WA 1.5x)]
                 content_fb_web = multiply_prices(msg.text, factor=2.0)
-                content_wa = multiply_prices(msg.text, factor=1.5)
+                content_wa = multiply_prices(msg.text, factor=1.3)
                 
                 # Extract 2x price for website object
                 price_match = re.search(r'(\d+(?:,\d{3})*(?:\.\d+)?)', content_fb_web)

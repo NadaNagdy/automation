@@ -4,7 +4,13 @@ import os
 import time
 import re
 import requests
+import pyautogui
+import subprocess
+# Fail-safe ensuring you can always exit automation by moving mouse to corner
+pyautogui.FAILSAFE = True
 from io import BytesIO
+import pywhatkit
+import shutil
 from google.oauth2.service_account import Credentials
 
 # 1. تحويل روابط جوجل درايف لصيغة التحميل المباشر
@@ -50,7 +56,16 @@ def post_instagram_photo(ig_id, image_url, caption, access_token):
         'caption': caption,
         'access_token': access_token
     }
-    resp = requests.post(url_create, data=payload).json()
+    try:
+        resp = requests.post(url_create, data=payload, timeout=30).json()
+    except Exception as e:
+        print(f"⚠️ IG Photo Connection Error (Retrying): {e}")
+        time.sleep(5)
+        try:
+            resp = requests.post(url_create, data=payload, timeout=30).json()
+        except Exception as e2:
+            print(f"❌ IG Photo Failed twice: {e2}")
+            return False
     creation_id = resp.get('id')
     
     if not creation_id:
@@ -122,6 +137,176 @@ def post_instagram_reel(ig_id, video_url, caption, access_token):
          return False
 
 
+
+def post_to_whatsapp_channel(channel_name, channel_link, message, image_path):
+    """
+    Posts message and image to a WhatsApp Channel using GUI automation.
+    Tries opening the channel link first, then falls back to search.
+    """
+    import webbrowser
+    import pyperclip
+    import time
+    
+    print(f"🚀 Posting to WhatsApp Channel: {channel_name}")
+    
+    # 1. Try opening the Channel Link directly
+    # This might open the "View Channel" page which requires a click to "Open in Web"
+    # or it might redirect to the channel in the app.
+    # Let's try opening it.
+    if channel_link:
+        print(f"🔗 Opening Channel Link: {channel_link}")
+        webbrowser.open(channel_link)
+        time.sleep(15) # Wait for page load and potential redirect
+        
+        # If the link opened the "View Channel" landing page, we might need to click "View in WhatsApp Web"
+        # But this is tricky to detect. 
+        # Often, if you are logged in, it might just offer to open.
+        
+        # Let's assume it *might* have worked, but if not, we use the Search Fallback.
+        # We can detect if we are in the channel by checking screen? No.
+        # We will blindly try to Search as a fallback if the link didn't focus the chat.
+        
+    # 2. Fallback / Ensure Focus: Search for Channel
+    # Even if link opened it, searching for it again is safe and ensures focus.
+    
+    # Ensure we are on WhatsApp Web tab (Link opening might have opened a new tab)
+    # If we opened a new tab, great.
+    
+    try:
+        print("🔍 Ensuring Channel Focus via Search...")
+        # Mac: Cmd + Ctrl + / ? Or just '/' if enabled.
+        # Web shortcut: Cmd + Alt + / 
+        
+        pyautogui.hotkey('command', 'option', '/') 
+        time.sleep(1)
+        
+        # 3. Type Channel Name
+        pyperclip.copy(channel_name)
+        pyautogui.hotkey('command', 'v')
+        
+        time.sleep(3) # Wait for search results
+        
+        # 4. Select the Channel
+        # Assume it's the first result. Press Down -> Enter
+        pyautogui.press('down')
+        time.sleep(0.5)
+        pyautogui.press('enter')
+        time.sleep(3) # Wait for channel to open
+        
+        # 5. Send Image (Copy to Clipboard) and Message
+        if image_path:
+            if not os.path.exists(image_path) or os.path.getsize(image_path) == 0:
+                 print("⚠️ Image file is missing or empty. Skipping image.")
+            else:
+                try:
+                    # Clear Clipboard first to avoid stale images
+                    pyperclip.copy("") 
+                    
+                    print(f"📸 Copying image to clipboard: {image_path}")
+                    # Use AppleScript to copy image to clipboard
+                    abs_path = os.path.abspath(image_path)
+                    cmd = f'set the clipboard to (read (POSIX file "{abs_path}") as JPEG picture)'
+                    subprocess.run(['osascript', '-e', cmd], check=True)
+                    
+                    time.sleep(1)
+                    
+                    # Verify clipboard content type? (Hard in python without heavyweight libs)
+                    # We trust osascript.
+                    
+                    # Paste Image
+                    pyautogui.hotkey('command', 'v')
+                    time.sleep(3) # Wait for image preview to load
+                    
+                    # Type Caption
+                    pyperclip.copy(message)
+                    pyautogui.hotkey('command', 'v')
+                    time.sleep(1)
+                    
+                    # Send
+                    pyautogui.press('enter')
+                    print("✅ Posted to WhatsApp Channel (Image + Text)")
+                    
+                except Exception as e:
+                    print(f"⚠️ Failed to copy/paste image: {e}. Falling back to text.")
+                    # Fallback to Text Only
+                    pyperclip.copy(message)
+                    pyautogui.hotkey('command', 'v')
+                    time.sleep(1)
+                    pyautogui.press('enter')
+        else:
+            # Text Only
+            pyperclip.copy(message)
+            pyautogui.hotkey('command', 'v')
+            time.sleep(1)
+            pyautogui.press('enter')
+            print("✅ Posted to WhatsApp Channel (Text Only)")
+             
+    except Exception as e:
+        print(f"❌ Failed to post to channel: {e}")
+
+# --- Website Helpers ---
+def update_website(text, price, image_path):
+    """Updates the toys/index.html file with the new product."""
+    index_path = 'toys/index.html'
+    img_dir = 'toys/img'
+    
+    # 1. Determine new ID
+    if not os.path.exists(index_path):
+        print(f"❌ Index file not found at {index_path}")
+        return
+
+    with open(index_path, 'r') as f:
+        content = f.read()
+    
+    # Find all IDs to get the max
+    ids = [int(m) for m in re.findall(r'id:\s*(\d+)', content)]
+    new_id = max(ids) + 1 if ids else 1
+    
+    # 2. Move and Rename Image
+    if not os.path.exists(img_dir):
+        os.makedirs(img_dir)
+        
+    new_img_name = f"{new_id}.jpg"
+    new_img_path = os.path.join(img_dir, new_img_name)
+    try:
+        shutil.copy(image_path, new_img_path) 
+        print(f"✅ Image saved to {new_img_path}")
+    except Exception as e:
+        print(f"❌ Failed to save image: {e}")
+        return
+    
+    # 3. Create Product Object
+    # Simple extraction of name (first line) and description
+    lines = text.split('\n')
+    name = lines[0][:50].replace('"', "'").strip() # First line, max 50 chars, escape quotes
+    desc = text.replace('"', "'").replace('\n', '\\n').replace('`', "'") # Escape backticks too
+    
+    # Clean price
+    try:
+        # Simple heuristic if price is passed as number or string
+        price_val = float(str(price).replace(',', '').replace('EGP', '').replace('LE', '').replace(' ', ''))
+    except:
+        price_val = 0
+        
+    new_product_js = f"""
+            {{
+                id: {new_id}, name: "{name}", price: {price_val}, age: "3y+", img: "img/{new_img_name}", desc: `{desc}`, benefits: "منتج جديد", play_guide: "استمتاع وتعلّم"
+            }},"""
+            
+    # 4. Insert into index.html
+    insert_pos = content.find('const products = [')
+    if insert_pos > -1:
+         # Find the opening bracket
+         start_bracket = insert_pos + len('const products = [')
+         # Insert right after the opening bracket
+         new_content = content[:start_bracket] + new_product_js + content[start_bracket:]
+         with open(index_path, 'w') as f:
+             f.write(new_content)
+         print(f"✅ Added to Website: {name} (ID: {new_id})")
+    else:
+         print("❌ Could not find products array in index.html")
+
+
 # 2. إعداد الاتصال بجوجل شيت (gspread 6.0.0)
 try:
     # Load configuration
@@ -129,6 +314,11 @@ try:
     with open('config.json', 'r') as f:
         config = json.load(f)
 
+    # WhatsApp Config
+    wa_target = config.get("whatsapp", {}).get("admin_phone", "")
+    wa_channel = config.get("whatsapp", {}).get("channel_name", "") 
+    wa_channel_link = config.get("whatsapp", {}).get("channel_link", "")
+    
     scopes = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
     
     if not os.path.exists('credentials.json'):
@@ -201,6 +391,7 @@ to_post = []
 COL_CONTENT = config.get("columns", {}).get("content", 0)
 COL_IMAGE = config.get("columns", {}).get("image", 1)
 COL_STATUS = config.get("columns", {}).get("status", 2)
+COL_WA_CONTENT = config.get("columns", {}).get("whatsapp_content", 4)
 BATCH_SIZE = config.get("batch_size", 3)
 
 for i, row in enumerate(all_records[1:], start=2):
@@ -211,9 +402,14 @@ for i, row in enumerate(all_records[1:], start=2):
     text_content = row[COL_CONTENT].strip()
     image_link = row[COL_IMAGE].strip()
     status = row[COL_STATUS].strip()
+    
+    # Get WA Content if available, else fallback to text_content
+    wa_content = text_content
+    if len(row) > COL_WA_CONTENT:
+        wa_content = row[COL_WA_CONTENT].strip() or text_content
 
     if text_content and image_link and status.lower() != "done":
-        to_post.append({"row_idx": i, "message": text_content, "image": image_link})
+        to_post.append({"row_idx": i, "message": text_content, "wa_message": wa_content, "image": image_link})
     
     if len(to_post) == BATCH_SIZE:
         break
@@ -227,6 +423,11 @@ for item in to_post:
         # تحميل الصورة برمجياً (requests 2.31.0)
         response = requests.get(direct_url, timeout=30)
         if response.status_code == 200:
+            # Save Image Locally for Website/WhatsApp
+            local_image_path = f"temp_image_{item['row_idx']}.jpg"
+            with open(local_image_path, 'wb') as f:
+                f.write(response.content)
+            
             # 1. Post to Facebook
             image_bytes = BytesIO(response.content)
             graph.put_photo(image=image_bytes, message=item['message'])
@@ -252,6 +453,39 @@ for item in to_post:
                     # For images, use lh3 link to avoid redirect/mime-type issues
                     ig_url = get_instagram_compatible_url(item['image'])
                     post_instagram_photo(ig_id, ig_url, item['message'], fb_token)
+
+            # 3. Update Website
+            # Extract price from message (simple regex or just pass 0 if not found)
+            # Assuming the message contains the price or we just parse it
+            try:
+                # Try to find a number in the message
+                price_match = re.search(r'(\d+(?:,\d{3})*(?:\.\d+)?)', item['message'])
+                price_val = price_match.group(1) if price_match else 0
+                update_website(item['message'], price_val, local_image_path)
+            except Exception as e:
+                print(f"❌ Failed to update website: {e}")
+
+            # 4. Post to WhatsApp (Admin)
+            if wa_target:
+                print(f"📱 Sending to WhatsApp Admin: {wa_target}")
+                try:
+                    wa_msg = f"{item['wa_message']}\n\n{item['image']}"
+                    pywhatkit.sendwhatmsg_instantly(wa_target, wa_msg, wait_time=15, tab_close=False) # Keep tab open for next step
+                    print("✅ Sent to WhatsApp Admin")
+                    time.sleep(5) 
+                except Exception as e:
+                    print(f"❌ Failed to send to WhatsApp Admin: {e}")
+
+            # 5. Post to WhatsApp Channel
+            if wa_channel:
+                 try:
+                     post_to_whatsapp_channel(wa_channel, wa_channel_link, item['wa_message'], local_image_path)
+                 except Exception as e:
+                     print(f"❌ Failed to channel post: {e}")
+
+            # Clean up local file
+            if os.path.exists(local_image_path):
+                os.remove(local_image_path)
 
             # تحديث الحالة في العمود المحدد (1-based index)
             # config["columns"]["status"] is 0-based, so add 1
